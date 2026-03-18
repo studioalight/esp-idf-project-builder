@@ -127,7 +127,7 @@ def get_build_files(build_dir, list_only=False):
     app_files = [f for f in files if f[0].endswith('.bin') and not any(x in f[0].lower() for x in ['bootloader', 'partition', 'storage'])]
     return app_files[:1] if app_files else files[:1] if files else []
 
-async def flash_file(ws, filename, address, baud=921600):
+async def flash_file(ws, filename, address, baud=921600, verbose=False):
     """Flash single file"""
     print(f"\nFlashing {filename} at {address}...")
     
@@ -138,28 +138,60 @@ async def flash_file(ws, filename, address, baud=921600):
         'rate': baud
     }))
     
+    esptool_output = []
+    
     while True:
         try:
             msg = await asyncio.wait_for(ws.recv(), timeout=120.0)
-            data = json.loads(msg)
             
-            if data.get('type') == 'output':
-                print(f"  {data['data']}", end='')
+            # Verbose: show raw message
+            if verbose:
+                print(f"[RAW] {msg[:200]}{'...' if len(msg) > 200 else ''}")
             
-            if data.get('type') == 'flash':
+            try:
+                data = json.loads(msg)
+            except json.JSONDecodeError:
+                if verbose:
+                    print(f"[NON-JSON] {msg[:100]}")
+                continue
+            
+            msg_type = data.get('type')
+            
+            # Handle esptool stdout output
+            if msg_type == 'output':
+                output_data = data.get('data', '')
+                esptool_output.append(output_data)
+                print(f"  {output_data}", end='')
+            
+            # Handle esptool stderr
+            elif msg_type == 'error_output':
+                error_data = data.get('data', '')
+                esptool_output.append(f"[stderr] {error_data}")
+                print(f"  [stderr] {error_data}", end='', file=sys.stderr)
+            
+            # Handle system/debug messages
+            elif msg_type == 'system' and verbose:
+                print(f"[SYSTEM] {data.get('message', '')}")
+            
+            # Handle flash status messages
+            elif msg_type == 'flash':
                 status = data.get('status')
                 if status == 'complete':
                     print(f"✓ {filename} complete")
-                    return True
+                    return True, esptool_output if verbose else None
                 elif status == 'error':
                     print(f"✗ Flash failed: {data.get('message')}", file=sys.stderr)
-                    return False
+                    return False, esptool_output if verbose else None
+            
+            # Handle unknown message types
+            elif verbose:
+                print(f"[UNKNOWN TYPE: {msg_type}] {data}")
                     
         except asyncio.TimeoutError:
             print(f"✗ Timeout", file=sys.stderr)
-            return False
+            return False, esptool_output if verbose else None
     
-    return True
+    return True, esptool_output if verbose else None
 
 async def get_chip_id(ws):
     """Query chip ID from bridge"""
@@ -183,14 +215,20 @@ async def get_chip_id(ws):
     
     return {'error': 'Invalid response'}
 
-async def do_flash(files, baud=921600, reset_after=True, bridge_uri=None):
+async def do_flash(files, baud=921600, reset_after=True, bridge_uri=None, verbose=False):
     """Flash files"""
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
     
+    all_output = []
+    
     async with websockets.connect(bridge_uri, ssl=ssl_context, ping_interval=None) as ws:
-        print(f"Connected to bridge\n")
+        print(f"Connected to bridge")
+        if verbose:
+            print(f"Verbose mode: ON (showing all WebSocket traffic)\n")
+        else:
+            print()
         
         # Enter bootloader
         await ws.send(json.dumps({'action': 'bootloader', 'enter_bootloader': True}))
@@ -198,7 +236,15 @@ async def do_flash(files, baud=921600, reset_after=True, bridge_uri=None):
         
         success = True
         for filename, address in files:
-            if not await flash_file(ws, filename, address, baud):
+            result = await flash_file(ws, filename, address, baud, verbose)
+            if isinstance(result, tuple):
+                file_success, file_output = result
+                if file_output:
+                    all_output.extend(file_output)
+            else:
+                file_success = result
+            
+            if not file_success:
                 success = False
                 break
             await asyncio.sleep(3.0)
@@ -209,7 +255,7 @@ async def do_flash(files, baud=921600, reset_after=True, bridge_uri=None):
             await asyncio.sleep(1)
             print("✓ Device reset")
         
-        return success
+        return success, all_output if verbose else None
 
 async def do_get_chip_id(bridge_uri=None):
     """Query chip ID from connected device via bridge"""
@@ -243,6 +289,7 @@ def main():
     parser.add_argument('--list-files-to-flash', '-l', action='store_true', help='List available binaries without flashing')
     parser.add_argument('--no-reset', action='store_true', help='Skip device reset after flash')
     parser.add_argument('--chip-id', '-i', action='store_true', help='Query chip ID from connected device')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Show all WebSocket traffic and esptool output')
     args = parser.parse_args()
     
     # Bridge URI from environment or default
@@ -317,13 +364,24 @@ def main():
     print(f"Baud rate: {baud}")
     print()
     
-    success = asyncio.run(do_flash(files, baud=baud, reset_after=not args.no_reset, bridge_uri=bridge_uri))
+    result = asyncio.run(do_flash(files, baud=baud, reset_after=not args.no_reset, bridge_uri=bridge_uri, verbose=args.verbose))
+    
+    # Handle tuple return (success, output) or bool return
+    if isinstance(result, tuple):
+        success, esptool_output = result
+    else:
+        success = result
+        esptool_output = None
     
     if success:
         print("\n✓ Flash complete!")
         print(f"Monitor with: esp-idf monitor")
     else:
         print("\n✗ Flash failed", file=sys.stderr)
+        if esptool_output and args.verbose:
+            print(f"\n--- Full esptool output ---")
+            print(''.join(esptool_output))
+            print(f"--- End esptool output ---")
         sys.exit(1)
 
 if __name__ == '__main__':

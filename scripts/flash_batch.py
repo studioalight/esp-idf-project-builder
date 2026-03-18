@@ -197,7 +197,7 @@ def scan_for_storage(build_dir):
         return {'filename': 'storage.bin', 'addr': '0x910000', 'category': 'storage'}
     return None
 
-async def flash_batch(ws, files, baud=1500000, reset_after=True):
+async def flash_batch(ws, files, baud=1500000, reset_after=True, verbose=False):
     """Send batch flash command to bridge"""
     await ws.send(json.dumps({
         'action': 'flash_batch',
@@ -210,16 +210,44 @@ async def flash_batch(ws, files, baud=1500000, reset_after=True):
     file_count = len(files)
     current_file = 0
     current_file_name = None
+    esptool_output = []
     
     while True:
         try:
             msg = await asyncio.wait_for(ws.recv(), timeout=180.0)
-            data = json.loads(msg)
             
-            if data.get('type') == 'output':
-                print(f"  {data['data']}", end='')
+            # Verbose: show raw message
+            if verbose:
+                print(f"[RAW] {msg[:200]}{'...' if len(msg) > 200 else ''}")
             
-            if data.get('type') == 'flash_batch':
+            try:
+                data = json.loads(msg)
+            except json.JSONDecodeError:
+                if verbose:
+                    print(f"[NON-JSON] {msg[:100]}")
+                continue
+            
+            msg_type = data.get('type')
+            
+            # Handle esptool stdout output
+            if msg_type == 'output':
+                output_data = data.get('data', '')
+                esptool_output.append(output_data)
+                print(f"  {output_data}", end='')
+            
+            # Handle esptool stderr
+            elif msg_type == 'error_output':
+                error_data = data.get('data', '')
+                esptool_output.append(f"[stderr] {error_data}")
+                print(f"  [stderr] {error_data}", end='', file=sys.stderr)
+            
+            # Handle system/debug messages
+            elif msg_type == 'system':
+                if verbose:
+                    print(f"[SYSTEM] {data.get('message', '')}")
+            
+            # Handle flash_batch status messages
+            elif msg_type == 'flash_batch':
                 status = data.get('status')
                 
                 if status == 'file_start':
@@ -240,21 +268,25 @@ async def flash_batch(ws, files, baud=1500000, reset_after=True):
                     print(f"\n✓ Batch flash complete ({data.get('time', '?')}s)")
                     if data.get('reset_performed'):
                         print("✓ Device reset")
-                    return True
+                    return True, esptool_output if verbose else None
                 
                 elif status == 'error':
                     failed_file = data.get('file', 'unknown')
                     message = data.get('message', 'Unknown error')
                     print(f"\n✗ Flash failed on {failed_file}: {message}", file=sys.stderr)
-                    return False
+                    return False, esptool_output if verbose else None
+            
+            # Handle unknown message types
+            elif verbose:
+                print(f"[UNKNOWN TYPE: {msg_type}] {data}")
                     
         except asyncio.TimeoutError:
             print(f"\n✗ Timeout waiting for flash response", file=sys.stderr)
-            return False
+            return False, esptool_output if verbose else None
     
-    return True
+    return True, esptool_output if verbose else None
 
-async def do_flash_batch(files, baud=1500000, reset_after=True, bridge_uri=None):
+async def do_flash_batch(files, baud=1500000, reset_after=True, bridge_uri=None, verbose=False):
     """Execute batch flash via WebSocket"""
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
@@ -266,9 +298,11 @@ async def do_flash_batch(files, baud=1500000, reset_after=True, bridge_uri=None)
         for f in files:
             print(f"  {f['filename']:40s} at {f['addr']} ({f.get('category', 'app')})")
         print(f"Baud rate: {baud}")
+        if verbose:
+            print(f"Verbose mode: ON (showing all WebSocket traffic)")
         print()
         
-        return await flash_batch(ws, files, baud, reset_after)
+        return await flash_batch(ws, files, baud, reset_after, verbose)
 
 def main():
     parser = argparse.ArgumentParser(description='Flash multiple binaries in one atomic operation')
@@ -279,6 +313,7 @@ def main():
     parser.add_argument('--files', '-f', nargs='+', metavar=('FILE', 'ADDR'), help='Manual file list')
     parser.add_argument('--skip-storage', action='store_true', help='Skip storage.bin')
     parser.add_argument('--dry-run', '-n', action='store_true', help='Show flash plan without flashing')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Show all WebSocket traffic and esptool output')
     args = parser.parse_args()
     
     bridge_uri = get_bridge_uri()
@@ -357,13 +392,24 @@ def main():
         print(f"\n✓ Dry run complete")
         return
     
-    success = asyncio.run(do_flash_batch(files, baud=baud, reset_after=not args.no_reset, bridge_uri=bridge_uri))
+    result = asyncio.run(do_flash_batch(files, baud=baud, reset_after=not args.no_reset, bridge_uri=bridge_uri, verbose=args.verbose))
+    
+    # Handle tuple return (success, output) or bool return
+    if isinstance(result, tuple):
+        success, esptool_output = result
+    else:
+        success = result
+        esptool_output = None
     
     if success:
         print(f"\n✓ Flash batch complete!")
         print(f"Monitor with: esp-idf monitor")
     else:
         print(f"\n✗ Flash batch failed", file=sys.stderr)
+        if esptool_output and args.verbose:
+            print(f"\n--- Full esptool output ---")
+            print(''.join(esptool_output))
+            print(f"--- End esptool output ---")
         sys.exit(1)
 
 if __name__ == '__main__':
