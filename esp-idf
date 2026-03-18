@@ -13,12 +13,15 @@ Commands:
   monitor     - Monitor serial output
   iterate     - Full loop: build + upload + flash + monitor
   new-project - Create from template
+  discover    - Discover device connected to bridge
 
 Examples:
   esp-idf install --targets esp32,esp32s3,esp32p4
   esp-idf build --project ~/my-project --target esp32s3
   esp-idf iterate --project ~/my-project --target esp32s3 --clean
   esp-idf flash --project ~/my-project --file app.bin --addr 0x10000
+  esp-idf discover                    # Show connected device
+  esp-idf flash --verify-target       # Warn if device mismatch
 """
 
 import sys
@@ -46,7 +49,8 @@ def main():
         'flash-batch': 'flash_batch.py',
         'monitor': 'monitor.py',
         'iterate': 'iterate.py',
-        'new-project': 'new_project.py'
+        'new-project': 'new_project.py',
+        'discover': 'discover.py'
     }
     
     if command in commands:

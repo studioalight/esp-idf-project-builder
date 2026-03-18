@@ -276,27 +276,31 @@ async def do_flash(files, baud=921600, reset_after=True, bridge_uri=None, verbos
         
         return success, all_output if verbose else None
 
-async def do_get_chip_id(bridge_uri=None, verbose=False):
+async def do_get_chip_id(bridge_uri=None, verbose=False, print_output=True):
     """Query chip ID from connected device via bridge"""
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
     
     async with websockets.connect(bridge_uri, ssl=ssl_context, ping_interval=None) as ws:
-        print("Connected to bridge")
-        print("Querying chip ID...\n")
+        if print_output:
+            print("Connected to bridge")
+            print("Querying chip ID...\n")
         
         result = await get_chip_id(ws, verbose)
         
         if 'error' in result:
-            print(f"✗ Failed to get chip ID: {result['error']}")
-            return False
+            if print_output:
+                print(f"✗ Failed to get chip ID: {result['error']}")
+            return None
         
-        print(f"Chip ID:  {result.get('chip_id', 'N/A')}")
-        print(f"MAC:      {result.get('mac', 'N/A')}")
-        print(f"Target:   {result.get('target', 'N/A')}")
-        print(f"Status:   {result.get('status', 'N/A')}")
-        return True
+        if print_output:
+            print(f"Chip ID:  {result.get('chip_id', 'N/A')}")
+            print(f"MAC:      {result.get('mac', 'N/A')}")
+            print(f"Target:   {result.get('target', 'N/A')}")
+            print(f"Status:   {result.get('status', 'N/A')}")
+        
+        return result
 
 def main():
     parser = argparse.ArgumentParser(description='Flash binaries via bridge')
@@ -309,6 +313,7 @@ def main():
     parser.add_argument('--no-reset', action='store_true', help='Skip device reset after flash')
     parser.add_argument('--chip-id', '-i', action='store_true', help='Query chip ID from connected device')
     parser.add_argument('--verbose', '-v', action='store_true', help='Show all WebSocket traffic and esptool output')
+    parser.add_argument('--verify-target', action='store_true', help='Verify connected device matches build target before flashing')
     args = parser.parse_args()
     
     # Bridge URI from environment or default
@@ -316,8 +321,8 @@ def main():
     
     # Handle chip ID query (no project required)
     if args.chip_id:
-        success = asyncio.run(do_get_chip_id(bridge_uri=bridge_uri, verbose=args.verbose))
-        sys.exit(0 if success else 1)
+        result = asyncio.run(do_get_chip_id(bridge_uri=bridge_uri, verbose=args.verbose))
+        sys.exit(0 if result else 1)
     
     # Project is required for flash operations
     if not args.project:
@@ -341,6 +346,27 @@ def main():
         else:
             target = 'esp32s3'  # Sensible default
             print(f"Using default target: {target}")
+    
+    # Verify target if requested
+    if args.verify_target:
+        print("\nVerifying connected device...")
+        device_info = asyncio.run(do_get_chip_id(bridge_uri=bridge_uri, verbose=False, print_output=False))
+        if device_info:
+            connected_target = device_info.get('target', '').lower().replace('-', '')
+            build_target = target.lower().replace('-', '')
+            if connected_target and connected_target != build_target:
+                print(f"⚠ Target mismatch!")
+                print(f"  Build target: {target}")
+                print(f"  Connected:    {device_info.get('target', 'N/A')}")
+                print()
+                print("Use --target to override or connect the correct device.")
+                sys.exit(2)
+            else:
+                print(f"✓ Device matches: {target}")
+        else:
+            print("✗ Could not detect connected device")
+            sys.exit(1)
+        print()
     
     # Get baud rate (from args or target default)
     baud = args.baud if args.baud else get_default_baud(target)
