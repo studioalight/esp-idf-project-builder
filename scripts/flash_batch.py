@@ -197,14 +197,15 @@ def scan_for_storage(build_dir):
         return {'filename': 'storage.bin', 'addr': '0x910000', 'category': 'storage'}
     return None
 
-async def flash_batch(ws, files, baud=1500000, reset_after=True, verbose=False):
+async def flash_batch(ws, files, baud=1500000, reset_after=True, verbose=False, chip='auto'):
     """Send batch flash command to bridge"""
     await ws.send(json.dumps({
         'action': 'flash_batch',
         'files': files,
         'rate': baud,
         'reset_after': reset_after,
-        'verify': True
+        'verify': True,
+        'chip': chip
     }))
     
     file_count = len(files)
@@ -286,7 +287,7 @@ async def flash_batch(ws, files, baud=1500000, reset_after=True, verbose=False):
     
     return True, esptool_output if verbose else None
 
-async def do_flash_batch(files, baud=1500000, reset_after=True, bridge_uri=None, verbose=False):
+async def do_flash_batch(files, baud=1500000, reset_after=True, bridge_uri=None, verbose=False, chip='auto'):
     """Execute batch flash via WebSocket"""
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
@@ -298,11 +299,12 @@ async def do_flash_batch(files, baud=1500000, reset_after=True, bridge_uri=None,
         for f in files:
             print(f"  {f['filename']:40s} at {f['addr']} ({f.get('category', 'app')})")
         print(f"Baud rate: {baud}")
+        print(f"Chip: {chip}")
         if verbose:
             print(f"Verbose mode: ON (showing all WebSocket traffic)")
         print()
         
-        return await flash_batch(ws, files, baud, reset_after, verbose)
+        return await flash_batch(ws, files, baud, reset_after, verbose, chip)
 
 def main():
     parser = argparse.ArgumentParser(description='Flash multiple binaries in one atomic operation')
@@ -392,7 +394,7 @@ def main():
         print(f"\n✓ Dry run complete")
         return
     
-    result = asyncio.run(do_flash_batch(files, baud=baud, reset_after=not args.no_reset, bridge_uri=bridge_uri, verbose=args.verbose))
+    result = asyncio.run(do_flash_batch(files, baud=baud, reset_after=not args.no_reset, bridge_uri=bridge_uri, verbose=args.verbose, chip=target))
     
     # Handle tuple return (success, output) or bool return
     if isinstance(result, tuple):
