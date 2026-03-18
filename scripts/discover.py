@@ -52,12 +52,14 @@ async def discover_device(bridge_uri):
             msg_type = data.get('type')
             
             if msg_type == 'chip_id':
+                # Check if chip_id response contains an error
+                if data.get('error'):
+                    return {'error': data.get('error')}
                 return {
                     'chip_id': data.get('chip_id'),
                     'mac': data.get('mac'),
                     'target': data.get('target'),
-                    'status': data.get('status'),
-                    'error': data.get('error')
+                    'status': data.get('status')
                 }
             elif msg_type == 'error':
                 return {'error': data.get('message', 'Unknown error')}
