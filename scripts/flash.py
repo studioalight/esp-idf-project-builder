@@ -193,12 +193,16 @@ async def flash_file(ws, filename, address, baud=921600, verbose=False):
     
     return True, esptool_output if verbose else None
 
-async def get_chip_id(ws):
+async def get_chip_id(ws, verbose=False):
     """Query chip ID from bridge"""
     await ws.send(json.dumps({'action': 'get_chip_id'}))
     
     try:
         msg = await asyncio.wait_for(ws.recv(), timeout=10.0)
+        
+        if verbose:
+            print(f"[RAW RESPONSE] {msg[:200]}")
+        
         data = json.loads(msg)
         
         if data.get('type') == 'chip_id':
@@ -210,10 +214,14 @@ async def get_chip_id(ws):
             }
         elif data.get('type') == 'error':
             return {'error': data.get('message', 'Unknown error')}
+        else:
+            return {'error': f"Unexpected response type: {data.get('type')}"}
     except asyncio.TimeoutError:
         return {'error': 'Timeout waiting for chip ID'}
-    
-    return {'error': 'Invalid response'}
+    except json.JSONDecodeError as e:
+        return {'error': f'Invalid JSON response: {e}'}
+    except Exception as e:
+        return {'error': f'Error: {e}'}
 
 async def do_flash(files, baud=921600, reset_after=True, bridge_uri=None, verbose=False):
     """Flash files"""
@@ -257,7 +265,7 @@ async def do_flash(files, baud=921600, reset_after=True, bridge_uri=None, verbos
         
         return success, all_output if verbose else None
 
-async def do_get_chip_id(bridge_uri=None):
+async def do_get_chip_id(bridge_uri=None, verbose=False):
     """Query chip ID from connected device via bridge"""
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
@@ -267,7 +275,7 @@ async def do_get_chip_id(bridge_uri=None):
         print("Connected to bridge")
         print("Querying chip ID...\n")
         
-        result = await get_chip_id(ws)
+        result = await get_chip_id(ws, verbose)
         
         if 'error' in result:
             print(f"✗ Failed to get chip ID: {result['error']}")
@@ -297,7 +305,7 @@ def main():
     
     # Handle chip ID query (no project required)
     if args.chip_id:
-        success = asyncio.run(do_get_chip_id(bridge_uri=bridge_uri))
+        success = asyncio.run(do_get_chip_id(bridge_uri=bridge_uri, verbose=args.verbose))
         sys.exit(0 if success else 1)
     
     # Project is required for flash operations
