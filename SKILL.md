@@ -15,6 +15,15 @@ This skill provides a container-to-hardware workflow for ESP32 development:
 
 The bridge (MacBook) runs a WebSocket server that receives binaries from the container and flashes them to the ESP32 via esptool.
 
+## Key Features
+
+- **Config-free operation**: Flash addresses read automatically from ESP-IDF build artifacts
+- **Device discovery**: Query connected device type, MAC, and chip ID
+- **Target verification**: Verify device matches build target before flashing
+- **High-speed flashing**: 3Mbps default baud rate for faster uploads
+- **Smart reconnection**: Bridge tracks devices by hardware ID across reconnects
+- **Multi-target support**: ESP32, ESP32-S2, ESP32-S3, ESP32-C3, ESP32-C6, ESP32-P4
+
 ## Installation
 
 ```bash
@@ -43,6 +52,22 @@ Options:
 - `--template` — Template name (esp32p4-display, esp32s3-canvas, esp32-generic)
 - `--output` — Output directory (default: ~/.openclaw/workspace/projects/esp-idf-projects/)
 
+### `discover` — Discover Connected Device
+```bash
+./esp-idf discover                    # Show connected device
+./esp-idf discover --compare esp32s3  # Verify expected device
+```
+Shows:
+- Bridge version and connection status
+- Device target (esp32s3, esp32c6, etc.)
+- MAC address
+- Chip ID (or MAC for devices without chip ID)
+
+Exit codes:
+- `0` — Device found (and matches if `--compare` used)
+- `1` — No device detected
+- `2` — Device mismatch (with `--compare`)
+
 ### `build` — Compile Project
 ```bash
 ./esp-idf build --project ~/my-project --target esp32s3
@@ -53,13 +78,13 @@ Options:
 - `--clean` — Clean build (rm -rf build/ before building)
 
 Build generates:
-- `build/flash_args` — Flash arguments for esptool
+- `build/flash_args` — Flash arguments for esptool (read at runtime)
 - `build/*.bin` — Binary partitions
 - `build/project.elf` — ELF file for debugging
 
 ### `upload` — Upload to Bridge
 ```bash
-./esp-idf upload --project ~/my-project --target esp32s3
+./esp-idf upload --project ~/my-project
 ```
 Uploads all binaries from `build/` to the bridge's staging area.
 
@@ -72,6 +97,9 @@ Options:
 - `--file` — Binary file to flash
 - `--addr` — Flash address
 - `--target` — Target chip (for baud rate)
+- `--verify-target` — Verify connected device matches build target
+- `--chip-id` — Query chip ID without flashing
+- `--verbose` — Show all WebSocket traffic
 
 ### `flash-batch` — Flash All Partitions
 ```bash
@@ -79,11 +107,21 @@ Options:
 ```
 Reads `build/flash_args` and flashes all partitions atomically.
 
+Options:
+- `--project` — Project directory
+- `--target` — Target chip
+- `--baud` — Baud rate (default: 3000000)
+- `--dry-run` — Show flash plan without flashing
+- `--verbose` — Show all WebSocket traffic
+
 ### `monitor` — Serial Output
 ```bash
-./esp-idf monitor --target esp32s3
+./esp-idf monitor --duration 30
 ```
 Streams serial output from the ESP32 via the bridge.
+
+Options:
+- `--duration` — Monitor duration in seconds (default: 15)
 
 ### `iterate` — Full Workflow
 ```bash
@@ -91,16 +129,61 @@ Streams serial output from the ESP32 via the bridge.
 ```
 Runs: build → upload → flash-batch → monitor
 
+Options:
+- `--project` — Project directory
+- `--target` — Target chip
+- `--clean` — Clean build first
+- `--no-flash` — Skip flash step
+- `--no-monitor` — Skip monitor step
+- `--monitor-duration` — Monitor duration in seconds
+
 ## Target Configuration
 
 | Target | Bootloader | Default Baud | Key Features |
 |--------|------------|--------------|--------------|
-| ESP32 | 0x1000 | 921600 | WiFi, BT, Classic BT |
-| ESP32-S2 | 0x1000 | 921600 | WiFi, USB OTG |
-| ESP32-S3 | 0x1000 | 921600 | WiFi, BT, USB OTG, LCD/CAM |
-| ESP32-C3 | 0x0000 | 460800 | WiFi, BT (RISC-V) |
-| ESP32-C6 | 0x0000 | 460800 | WiFi 6, BT, Zigbee (RISC-V) |
+| ESP32 | 0x1000 | 3000000 | WiFi, BT, Classic BT |
+| ESP32-S2 | 0x1000 | 3000000 | WiFi, USB OTG |
+| ESP32-S3 | 0x1000 | 3000000 | WiFi, BT, USB OTG, LCD/CAM |
+| ESP32-C3 | 0x0000 | 3000000 | WiFi, BT (RISC-V) |
+| ESP32-C6 | 0x0000 | 3000000 | WiFi 6, BT, Zigbee (RISC-V) |
 | ESP32-P4 | 0x2000 | 3000000 | WiFi 6, BT, MIPI DSI, LCD/CAM (RISC-V) |
+
+## Device Discovery and Verification
+
+### Check Connected Device
+```bash
+./esp-idf discover
+```
+Output:
+```
+Bridge:     v2.0-localip (abc1234)
+Connected:  True
+Port:       /dev/cu.usbmodem2101
+
+Device Info:
+  Target:   esp32s3
+  MAC:      80:b5:4e:f3:2d:04
+  Chip ID:  80:b5:4e:f3:2d:04
+  Status:   connected
+```
+
+### Verify Before Flashing
+```bash
+./esp-idf flash --project ~/my-project --verify-target
+```
+If device doesn't match:
+```
+⚠ Target mismatch!
+  Build target: esp32s3
+  Connected:    esp32c6
+
+Use --target to override or connect the correct device.
+```
+
+### Compare Expected Device
+```bash
+./esp-idf discover --compare esp32s3 && ./esp-idf build --project ~/my-project
+```
 
 ## Bridge Setup
 
@@ -113,13 +196,26 @@ The bridge runs on a MacBook with USB access to ESP32 devices:
 
 2. **Run the bridge server:**
    ```bash
-   python3 bridge_server.py
+   python3 esp32-bridge.py --auto
    ```
 
 3. **Verify Tailscale connectivity:**
    ```bash
    ping esp32-bridge.tailbdd5a.ts.net
    ```
+
+## Bridge Features
+
+### Smart Reconnection
+- Tracks devices by USB hardware ID (VID:PID:Serial)
+- Waits 30s for same device to reconnect
+- After timeout, accepts any ESP32 device
+- Excludes non-ESP32 ports (debug consoles, Bluetooth, etc.)
+
+### Device Detection
+- Auto-detects chip type (ESP32-S3, ESP32-C6, etc.)
+- Returns MAC address for devices without chip ID
+- Handles EUI-64 format MACs (ESP32-C6)
 
 ## Project Structure
 
@@ -133,7 +229,7 @@ my-project/
 │   └── main.c             # Application entry point
 ├── components/              # Custom components (optional)
 └── build/                 # Build output (generated)
-    ├── flash_args          # Flash arguments
+    ├── flash_args          # Flash arguments (read at runtime)
     ├── bootloader.bin      # Bootloader
     ├── partition-table.bin # Partition table
     └── my-project.bin      # Application binary
@@ -174,16 +270,19 @@ Run: `idf.py set-target esp32s3` (or your target)
 - Verify correct baud rate for target
 
 ### Monitor shows garbled output
-- Verify correct baud rate (ESP32-P4 uses 3Mbps)
+- Verify correct baud rate (3Mbps default)
 - Check serial port selection on bridge
 
-## Configuration
+### Device not detected
+- Run `./esp-idf discover` to check connection
+- Verify device is ESP32 (not other USB device)
+- Check bridge logs for "No ESP32 device found"
 
-Edit `config/chip-config.yaml` to modify:
-- Target baud rates
-- Bridge host/port
-- Template repositories
-- Timing parameters
+## Environment Variables
+
+- `ESP_BRIDGE_HOST` — Bridge hostname (default: esp32-bridge.tailbdd5a.ts.net)
+- `ESP_BRIDGE_PORT` — WebSocket port (default: 5678)
+- `ESP_BRIDGE_HTTP_PORT` — HTTP port (default: 5679)
 
 ## Dependencies
 
