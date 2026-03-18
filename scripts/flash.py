@@ -64,16 +64,16 @@ def detect_target_from_build(build_dir):
 
 def get_default_baud(target):
     """Get default baud rate for target (hardcoded per-chip defaults)"""
-    # ESP-IDF defaults - these are the standard values
+    # High-speed defaults for faster flashing
     baud_map = {
-        'esp32': 921600,
-        'esp32s2': 921600,
-        'esp32s3': 921600,
-        'esp32c3': 921600,
-        'esp32c6': 921600,
-        'esp32p4': 921600,
+        'esp32': 3000000,
+        'esp32s2': 3000000,
+        'esp32s3': 3000000,
+        'esp32c3': 3000000,
+        'esp32c6': 3000000,
+        'esp32p4': 3000000,
     }
-    return baud_map.get(target, 921600)
+    return baud_map.get(target, 3000000)
 
 def get_build_files(build_dir, list_only=False):
     """Get list of flashable files from ESP-IDF build output (flash_args or flasher_args.json)
@@ -198,28 +198,39 @@ async def get_chip_id(ws, verbose=False):
     await ws.send(json.dumps({'action': 'get_chip_id'}))
     
     try:
-        msg = await asyncio.wait_for(ws.recv(), timeout=10.0)
-        
-        if verbose:
-            print(f"[RAW RESPONSE] {msg[:200]}")
-        
-        data = json.loads(msg)
-        
-        if data.get('type') == 'chip_id':
-            return {
-                'chip_id': data.get('chip_id'),
-                'mac': data.get('mac'),
-                'target': data.get('target'),
-                'status': data.get('status')
-            }
-        elif data.get('type') == 'error':
-            return {'error': data.get('message', 'Unknown error')}
-        else:
-            return {'error': f"Unexpected response type: {data.get('type')}"}
-    except asyncio.TimeoutError:
-        return {'error': 'Timeout waiting for chip ID'}
-    except json.JSONDecodeError as e:
-        return {'error': f'Invalid JSON response: {e}'}
+        # Keep listening until we get chip_id or error (ignore serial/system messages)
+        start_time = asyncio.get_event_loop().time()
+        while True:
+            elapsed = asyncio.get_event_loop().time() - start_time
+            if elapsed > 10.0:
+                return {'error': 'Timeout waiting for chip ID'}
+            
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            
+            if verbose:
+                print(f"[RAW RESPONSE] {msg[:200]}")
+            
+            try:
+                data = json.loads(msg)
+            except json.JSONDecodeError:
+                continue  # Skip non-JSON messages
+            
+            msg_type = data.get('type')
+            
+            if msg_type == 'chip_id':
+                return {
+                    'chip_id': data.get('chip_id'),
+                    'mac': data.get('mac'),
+                    'target': data.get('target'),
+                    'status': data.get('status')
+                }
+            elif msg_type == 'error':
+                return {'error': data.get('message', 'Unknown error')}
+            # Ignore other message types (serial, system, etc.)
+            
     except Exception as e:
         return {'error': f'Error: {e}'}
 

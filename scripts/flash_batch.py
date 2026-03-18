@@ -65,15 +65,16 @@ def detect_target_from_build(build_dir):
 
 def get_default_baud(target):
     """Get default baud rate for target (hardcoded per-chip defaults)"""
+    # High-speed defaults for faster flashing
     baud_map = {
-        'esp32': 921600,
-        'esp32s2': 921600,
-        'esp32s3': 921600,
-        'esp32c3': 921600,
-        'esp32c6': 921600,
-        'esp32p4': 921600,
+        'esp32': 3000000,
+        'esp32s2': 3000000,
+        'esp32s3': 3000000,
+        'esp32c3': 3000000,
+        'esp32c6': 3000000,
+        'esp32p4': 3000000,
     }
-    return baud_map.get(target, 921600)
+    return baud_map.get(target, 3000000)
 
 def get_flash_files_from_manifest(build_dir):
     """Get ordered list of files to flash from ESP-IDF build artifacts (flash_args)
