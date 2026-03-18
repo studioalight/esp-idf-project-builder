@@ -161,6 +161,28 @@ async def flash_file(ws, filename, address, baud=921600):
     
     return True
 
+async def get_chip_id(ws):
+    """Query chip ID from bridge"""
+    await ws.send(json.dumps({'action': 'get_chip_id'}))
+    
+    try:
+        msg = await asyncio.wait_for(ws.recv(), timeout=10.0)
+        data = json.loads(msg)
+        
+        if data.get('type') == 'chip_id':
+            return {
+                'chip_id': data.get('chip_id'),
+                'mac': data.get('mac'),
+                'target': data.get('target'),
+                'status': data.get('status')
+            }
+        elif data.get('type') == 'error':
+            return {'error': data.get('message', 'Unknown error')}
+    except asyncio.TimeoutError:
+        return {'error': 'Timeout waiting for chip ID'}
+    
+    return {'error': 'Invalid response'}
+
 async def do_flash(files, baud=921600, reset_after=True, bridge_uri=None):
     """Flash files"""
     ssl_context = ssl.create_default_context()
@@ -189,19 +211,52 @@ async def do_flash(files, baud=921600, reset_after=True, bridge_uri=None):
         
         return success
 
+async def do_get_chip_id(bridge_uri=None):
+    """Query chip ID from connected device via bridge"""
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    
+    async with websockets.connect(bridge_uri, ssl=ssl_context, ping_interval=None) as ws:
+        print("Connected to bridge")
+        print("Querying chip ID...\n")
+        
+        result = await get_chip_id(ws)
+        
+        if 'error' in result:
+            print(f"✗ Failed to get chip ID: {result['error']}")
+            return False
+        
+        print(f"Chip ID:  {result.get('chip_id', 'N/A')}")
+        print(f"MAC:      {result.get('mac', 'N/A')}")
+        print(f"Target:   {result.get('target', 'N/A')}")
+        print(f"Status:   {result.get('status', 'N/A')}")
+        return True
+
 def main():
     parser = argparse.ArgumentParser(description='Flash binaries via bridge')
-    parser.add_argument('--project', '-p', required=True, help='Project directory')
+    parser.add_argument('--project', '-p', help='Project directory (required for flash, optional for chip-id)')
     parser.add_argument('--target', '-t', help='Target chip (auto-detected if not specified)')
     parser.add_argument('--file', '-f', help='Specific file to flash')
     parser.add_argument('--addr', '-a', help='Address for specific file')
     parser.add_argument('--baud', '-b', type=int, help='Baud rate (auto-selected for target if not specified)')
     parser.add_argument('--list-files-to-flash', '-l', action='store_true', help='List available binaries without flashing')
     parser.add_argument('--no-reset', action='store_true', help='Skip device reset after flash')
+    parser.add_argument('--chip-id', '-i', action='store_true', help='Query chip ID from connected device')
     args = parser.parse_args()
     
     # Bridge URI from environment or default
     bridge_uri = get_bridge_uri()
+    
+    # Handle chip ID query (no project required)
+    if args.chip_id:
+        success = asyncio.run(do_get_chip_id(bridge_uri=bridge_uri))
+        sys.exit(0 if success else 1)
+    
+    # Project is required for flash operations
+    if not args.project:
+        print("Error: --project required (or use --chip-id to query device)", file=sys.stderr)
+        sys.exit(1)
     
     # Resolve paths
     project_path = resolve_project_path(args.project)
