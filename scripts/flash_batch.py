@@ -12,25 +12,13 @@ import ssl
 import argparse
 import sys
 import os
-import yaml
 from pathlib import Path
 
-# Get skill root
-SKILL_ROOT = Path(__file__).parent.parent
-
-def load_chip_config():
-    """Load chip configuration from YAML"""
-    config_path = SKILL_ROOT / 'config' / 'chip-config.yaml'
-    if config_path.exists():
-        with open(config_path) as f:
-            return yaml.safe_load(f)
-    return {}
-
-def get_bridge_uri(chip_config):
-    """Get WebSocket URI from config"""
-    bridge = chip_config.get('bridge', {})
-    host = bridge.get('host', 'esp32-bridge.tailbdd5a.ts.net')
-    port = bridge.get('ws_port', 5678)
+def get_bridge_uri():
+    """Get WebSocket URI from environment or default"""
+    import os
+    host = os.environ.get('ESP_BRIDGE_HOST', 'esp32-bridge.tailbdd5a.ts.net')
+    port = os.environ.get('ESP_BRIDGE_PORT', '5678')
     return f"wss://{host}:{port}"
 
 def resolve_project_path(path_str):
@@ -75,12 +63,17 @@ def detect_target_from_build(build_dir):
     
     return None
 
-def get_default_baud(target, chip_config):
-    """Get default baud rate for target (from config, not build output)"""
-    targets = chip_config.get('targets', {})
-    if target and target in targets:
-        return targets[target].get('default_baud', 921600)
-    return 921600
+def get_default_baud(target):
+    """Get default baud rate for target (hardcoded per-chip defaults)"""
+    baud_map = {
+        'esp32': 921600,
+        'esp32s2': 921600,
+        'esp32s3': 921600,
+        'esp32c3': 921600,
+        'esp32c6': 921600,
+        'esp32p4': 921600,
+    }
+    return baud_map.get(target, 921600)
 
 def get_flash_files_from_manifest(build_dir):
     """Get ordered list of files to flash from ESP-IDF build artifacts (flash_args)
@@ -282,8 +275,7 @@ def main():
     parser.add_argument('--dry-run', '-n', action='store_true', help='Show flash plan without flashing')
     args = parser.parse_args()
     
-    chip_config = load_chip_config()
-    bridge_uri = get_bridge_uri(chip_config)
+    bridge_uri = get_bridge_uri()
     
     project_path = resolve_project_path(args.project)
     build_dir = project_path / 'build'
@@ -299,11 +291,10 @@ def main():
         if target:
             print(f"Auto-detected target: {target}")
         else:
-            target = chip_config.get('esp_idf', {}).get('default_target', 'esp32s3')
+            target = 'esp32s3'
             print(f"Using default target: {target}")
     
-    default_baud = get_default_baud(target, chip_config)
-    baud = args.baud if args.baud else default_baud
+    baud = args.baud if args.baud else get_default_baud(target)
     
     files = []
     

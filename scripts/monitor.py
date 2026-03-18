@@ -10,25 +10,13 @@ import ssl
 import argparse
 import sys
 import re
-import yaml
 from pathlib import Path
 
-# Get skill root
-SKILL_ROOT = Path(__file__).parent.parent
-
-def load_chip_config():
-    """Load chip configuration from YAML"""
-    config_path = SKILL_ROOT / 'config' / 'chip-config.yaml'
-    if config_path.exists():
-        with open(config_path) as f:
-            return yaml.safe_load(f)
-    return {}
-
-def get_bridge_uri(chip_config):
-    """Get WebSocket URI from config"""
-    bridge = chip_config.get('bridge', {})
-    host = bridge.get('host', 'esp32-bridge.tailbdd5a.ts.net')
-    port = bridge.get('ws_port', 5678)
+def get_bridge_uri():
+    """Get WebSocket URI from environment or default"""
+    import os
+    host = os.environ.get('ESP_BRIDGE_HOST', 'esp32-bridge.tailbdd5a.ts.net')
+    port = os.environ.get('ESP_BRIDGE_PORT', '5678')
     return f"wss://{host}:{port}"
 
 async def monitor_serial(duration=None, grep=None, reset=False, stream=False, bridge_uri=None):
@@ -98,8 +86,7 @@ def main():
     parser.add_argument('--stream', '-s', action='store_true', help='Stream output without buffering')
     args = parser.parse_args()
     
-    chip_config = load_chip_config()
-    bridge_uri = get_bridge_uri(chip_config)
+    bridge_uri = get_bridge_uri()
     
     print("ESP-IDF Serial Monitor")
     print(f"Bridge: {bridge_uri}\n")

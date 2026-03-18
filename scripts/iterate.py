@@ -7,19 +7,7 @@ import subprocess
 import sys
 import argparse
 import os
-import yaml
 from pathlib import Path
-
-# Get skill root
-SKILL_ROOT = Path(__file__).parent.parent
-
-def load_chip_config():
-    """Load chip configuration from YAML"""
-    config_path = SKILL_ROOT / 'config' / 'chip-config.yaml'
-    if config_path.exists():
-        with open(config_path) as f:
-            return yaml.safe_load(f)
-    return {}
 
 def resolve_project_path(path_str):
     """Resolve project path"""
@@ -60,23 +48,23 @@ def main():
     parser.add_argument('--idf-path', default=os.path.expanduser('~/esp-idf-v5.4'), help='ESP-IDF path')
     args = parser.parse_args()
     
-    chip_config = load_chip_config()
     scripts_dir = Path(__file__).parent
     
     # Resolve project path for display
     project_path_resolved = resolve_project_path(args.project)
     
-    # Determine target for display
+    # Target is required or auto-detected from build
     target = args.target
-    if not target:
-        target = chip_config.get('esp_idf', {}).get('default_target', 'esp32s3')
     
     print("="*50)
     print("ESP-IDF ITERATION")
     print("Design → Build → Upload → Flash → Verify")
     print(f"Project: {args.project}")
     print(f"Resolved: {project_path_resolved}")
-    print(f"Target: {target}")
+    if target:
+        print(f"Target: {target}")
+    else:
+        print("Target: auto-detect from build")
     print("="*50)
     
     # Step 1: Build

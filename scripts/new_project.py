@@ -10,38 +10,21 @@ import subprocess
 import sys
 import os
 import re
-import yaml
 from pathlib import Path
 
-# Get skill root
-SKILL_ROOT = Path(__file__).parent.parent
-
-def load_chip_config():
-    """Load chip configuration from YAML"""
-    config_path = SKILL_ROOT / 'config' / 'chip-config.yaml'
-    if config_path.exists():
-        with open(config_path) as f:
-            return yaml.safe_load(f)
-    return {}
-
-def get_template_for_target(target, chip_config):
-    """Get template repo for target"""
-    templates = chip_config.get('templates', {})
-    
-    # Map target to template
+def get_template_for_target(target):
+    """Get template repo for target (hardcoded)"""
+    # Map target to template repo
     template_map = {
-        'esp32p4': 'esp32p4-display',
-        'esp32s3': 'esp32s3-canvas',
-        'esp32': 'esp32-generic',
-        'esp32s2': 'esp32-generic',
-        'esp32c3': 'esp32-generic',
-        'esp32c6': 'esp32-generic'
+        'esp32p4': 'https://github.com/studioalight/esp32p4-display.git',
+        'esp32s3': 'https://github.com/studioalight/esp32s3-canvas.git',
+        'esp32': 'https://github.com/espressif/esp-idf-template.git',
+        'esp32s2': 'https://github.com/espressif/esp-idf-template.git',
+        'esp32c3': 'https://github.com/espressif/esp-idf-template.git',
+        'esp32c6': 'https://github.com/espressif/esp-idf-template.git'
     }
     
-    template_key = template_map.get(target, 'esp32-generic')
-    template = templates.get(template_key, {})
-    
-    return template.get('repo', 'https://github.com/espressif/esp-idf-template.git')
+    return template_map.get(target, 'https://github.com/espressif/esp-idf-template.git')
 
 def main():
     parser = argparse.ArgumentParser(description='Create new ESP-IDF project from template')
@@ -55,8 +38,6 @@ def main():
     parser.add_argument('--keep-name', action='store_true',
                        help='Keep original template project name')
     args = parser.parse_args()
-    
-    chip_config = load_chip_config()
     
     # Sanitize project name
     project_name = args.name.replace(' ', '-').replace('_', '-')
@@ -82,7 +63,7 @@ def main():
         template_repo = args.template
         template_name = "custom"
     else:
-        template_repo = get_template_for_target(args.target, chip_config)
+        template_repo = get_template_for_target(args.target)
         template_name = args.target
     
     print(f"Creating new project: {project_name}")

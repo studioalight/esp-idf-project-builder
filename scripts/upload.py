@@ -13,26 +13,14 @@ import json
 import asyncio
 import websockets
 import ssl
-import yaml
 from pathlib import Path
 
-# Get skill root
-SKILL_ROOT = Path(__file__).parent.parent
-
-def load_chip_config():
-    """Load chip configuration from YAML"""
-    config_path = SKILL_ROOT / 'config' / 'chip-config.yaml'
-    if config_path.exists():
-        with open(config_path) as f:
-            return yaml.safe_load(f)
-    return {}
-
-def get_bridge_urls(chip_config):
-    """Get bridge URLs from config"""
-    bridge = chip_config.get('bridge', {})
-    host = bridge.get('host', 'esp32-bridge.tailbdd5a.ts.net')
-    http_port = bridge.get('http_port', 5679)
-    ws_port = bridge.get('ws_port', 5678)
+def get_bridge_urls():
+    """Get bridge URLs from environment or defaults"""
+    import os
+    host = os.environ.get('ESP_BRIDGE_HOST', 'esp32-bridge.tailbdd5a.ts.net')
+    http_port = os.environ.get('ESP_BRIDGE_HTTP_PORT', '5679')
+    ws_port = os.environ.get('ESP_BRIDGE_PORT', '5678')
     return {
         'https': f"https://{host}:{http_port}",
         'wss': f"wss://{host}:{ws_port}"
@@ -89,9 +77,9 @@ async def discover_bridge_ip(bridge_urls):
         
     return None, None
 
-def get_bridge_url(chip_config):
+def get_bridge_url():
     """Get bridge URL - try to use cached/direct IP first"""
-    bridge_urls = get_bridge_urls(chip_config)
+    bridge_urls = get_bridge_urls()
     cache_file = Path.home() / '.esp32-bridge' / 'direct_endpoint'
     
     # Try cached endpoint
@@ -209,7 +197,7 @@ def upload_file(filepath, dest_name=None, bridge_url=None):
     """Upload single file to bridge"""
     filepath = Path(filepath)
     dest = dest_name if dest_name else filepath.name
-    url = bridge_url if bridge_url else get_bridge_urls(load_chip_config())['https']
+    url = bridge_url if bridge_url else get_bridge_urls()['https']
     cmd = [
         'curl', '-k', '-s',
         '-F', f'file=@{filepath};filename={dest}',
@@ -238,12 +226,10 @@ def main():
     parser.add_argument('--list', '-l', action='store_true', help='List uploaded files')
     args = parser.parse_args()
     
-    chip_config = load_chip_config()
-    
     if not args.list:
         print("Discovering bridge...")
-    bridge_url, ip_type = get_bridge_url(chip_config)
-    if bridge_url != get_bridge_urls(chip_config)['https']:
+    bridge_url, ip_type = get_bridge_url()
+    if bridge_url != get_bridge_urls()['https']:
         url_display = bridge_url.replace('http://', '').replace(':5679', '')
         conn_type = 'local' if ip_type == 'local' else 'direct'
         print(f"  Using {conn_type} connection: {url_display}")

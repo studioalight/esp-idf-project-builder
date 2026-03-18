@@ -10,20 +10,8 @@ import argparse
 import subprocess
 import sys
 import os
-import yaml
 from pathlib import Path
 from datetime import datetime
-
-# Get skill root
-SKILL_ROOT = Path(__file__).parent.parent
-
-def load_chip_config():
-    """Load chip configuration from YAML"""
-    config_path = SKILL_ROOT / 'config' / 'chip-config.yaml'
-    if config_path.exists():
-        with open(config_path) as f:
-            return yaml.safe_load(f)
-    return {}
 
 def resolve_project_path(path_str):
     """Resolve project path - handle relative paths and tilde expansion"""
@@ -93,13 +81,17 @@ def detect_target_from_sdkconfig(project_path):
                 return line.split('=')[1].strip('"')
     return None
 
-def configure_chip_revision(project_path, target, chip_config):
+def configure_chip_revision(project_path, target):
     """Configure chip revision compatibility for targets that need it"""
-    if not target or target not in chip_config.get('targets', {}):
-        return False
+    # Hardcoded chip revision configs for targets that need them
+    revision_configs = {
+        'esp32p4': """# Chip revision compatibility
+CONFIG_ESP32P4_REV_MIN_0=y
+CONFIG_ESP32P4_REV_MIN_FULL=0
+"""
+    }
     
-    target_config = chip_config['targets'][target]
-    if not target_config.get('chip_revision_config', False):
+    if not target or target not in revision_configs:
         return False
     
     sdkconfig_path = project_path / 'sdkconfig'
@@ -114,7 +106,7 @@ def configure_chip_revision(project_path, target, chip_config):
         return False
     
     # Add target-specific revision config
-    revision_config = target_config.get('revision_defaults', '')
+    revision_config = revision_configs.get(target, '')
     if revision_config:
         with open(sdkconfig_path, 'a') as f:
             f.write('\n' + revision_config)
@@ -145,9 +137,6 @@ def main():
     parser.add_argument('--idf-version', default='5.4', help='ESP-IDF version')
     args = parser.parse_args()
     
-    # Load chip configuration
-    chip_config = load_chip_config()
-    
     # Resolve paths
     project_path = resolve_project_path(args.project)
     idf_path = get_idf_path(args)
@@ -169,17 +158,26 @@ def main():
         if target:
             print(f"Detected target from sdkconfig: {target}")
         else:
-            # Use default from config
-            target = chip_config.get('esp_idf', {}).get('default_target', 'esp32s3')
+            # Use sensible default
+            target = 'esp32s3'
             print(f"Using default target: {target}")
     
-    # Validate target
-    if target not in chip_config.get('targets', {}):
-        print(f"Warning: Unknown target '{target}', proceeding anyway", file=sys.stderr)
+    # Target info (hardcoded for known targets)
+    target_info_map = {
+        'esp32': {'name': 'ESP32', 'description': 'Original ESP32 (Xtensa LX6)'},
+        'esp32s2': {'name': 'ESP32-S2', 'description': 'Single-core Xtensa LX7 with USB OTG'},
+        'esp32s3': {'name': 'ESP32-S3', 'description': 'Dual-core Xtensa LX7 with AI/vector instructions'},
+        'esp32c3': {'name': 'ESP32-C3', 'description': 'RISC-V single-core with Wi-Fi/BLE'},
+        'esp32c6': {'name': 'ESP32-C6', 'description': 'RISC-V with Wi-Fi 6 and BLE 5'},
+        'esp32p4': {'name': 'ESP32-P4', 'description': 'High-performance RISC-V with LCD interface'},
+    }
+    
+    if target in target_info_map:
+        info = target_info_map[target]
+        print(f"Target: {info['name']}")
+        print(f"  {info['description']}")
     else:
-        target_info = chip_config['targets'][target]
-        print(f"Target: {target_info.get('name', target)}")
-        print(f"  {target_info.get('description', '')}")
+        print(f"Target: {target}")
     
     # Extract project name
     project_name = "project"
@@ -228,7 +226,7 @@ def main():
     
     # Configure chip revision if needed
     if target_set or sdkconfig.exists():
-        configure_chip_revision(project_path, target, chip_config)
+        configure_chip_revision(project_path, target)
     
     # Clean if requested
     if args.clean:
