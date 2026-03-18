@@ -1,0 +1,197 @@
+# ESP-IDF Project Builder
+
+Build, upload, and flash ESP-IDF projects across multiple ESP32 targets (ESP32, ESP32-S2, ESP32-S3, ESP32-C3, ESP32-C6, ESP32-P4).
+
+## Overview
+
+This skill provides a container-to-hardware workflow for ESP32 development:
+
+```
+┌─────────────┐     Tailscale      ┌──────────┐     USB      ┌─────────┐
+│  Container  │ ◄────────────────► │  Bridge  │ ◄──────────► │  ESP32  │
+│  (VS Code)  │    (WireGuard)     │  (Mac)   │   Serial   │  Target │
+└─────────────┘                    └──────────┘            └─────────┘
+```
+
+The bridge (MacBook) runs a WebSocket server that receives binaries from the container and flashes them to the ESP32 via esptool.
+
+## Installation
+
+```bash
+cd ~/.openclaw/workspace/skills/esp-idf-project-builder
+./esp-idf install --targets esp32s3,esp32p4
+```
+
+This installs ESP-IDF v5.4 with support for the specified targets.
+
+## Commands
+
+### `install` — Install ESP-IDF
+```bash
+./esp-idf install --targets esp32s3,esp32p4
+```
+Options:
+- `--targets` — Comma-separated list of targets (default: esp32,esp32s3)
+
+### `new-project` — Create from Template
+```bash
+./esp-idf new-project --name my-project --target esp32s3
+```
+Options:
+- `--name` — Project name
+- `--target` — Target chip (esp32, esp32s2, esp32s3, esp32c3, esp32c6, esp32p4)
+- `--template` — Template name (esp32p4-display, esp32s3-canvas, esp32-generic)
+- `--output` — Output directory (default: ~/.openclaw/workspace/projects/esp-idf-projects/)
+
+### `build` — Compile Project
+```bash
+./esp-idf build --project ~/my-project --target esp32s3
+```
+Options:
+- `--project` — Path to project directory
+- `--target` — Target chip
+- `--clean` — Clean build (rm -rf build/ before building)
+
+Build generates:
+- `build/flash_args` — Flash arguments for esptool
+- `build/*.bin` — Binary partitions
+- `build/project.elf` — ELF file for debugging
+
+### `upload` — Upload to Bridge
+```bash
+./esp-idf upload --project ~/my-project --target esp32s3
+```
+Uploads all binaries from `build/` to the bridge's staging area.
+
+### `flash` — Flash Single Binary
+```bash
+./esp-idf flash --project ~/my-project --file build/my-project.bin --addr 0x10000
+```
+Options:
+- `--project` — Project path (for context)
+- `--file` — Binary file to flash
+- `--addr` — Flash address
+- `--target` — Target chip (for baud rate)
+
+### `flash-batch` — Flash All Partitions
+```bash
+./esp-idf flash-batch --project ~/my-project --target esp32s3
+```
+Reads `build/flash_args` and flashes all partitions atomically.
+
+### `monitor` — Serial Output
+```bash
+./esp-idf monitor --target esp32s3
+```
+Streams serial output from the ESP32 via the bridge.
+
+### `iterate` — Full Workflow
+```bash
+./esp-idf iterate --project ~/my-project --target esp32s3 --clean
+```
+Runs: build → upload → flash-batch → monitor
+
+## Target Configuration
+
+| Target | Bootloader | Default Baud | Key Features |
+|--------|------------|--------------|--------------|
+| ESP32 | 0x1000 | 921600 | WiFi, BT, Classic BT |
+| ESP32-S2 | 0x1000 | 921600 | WiFi, USB OTG |
+| ESP32-S3 | 0x1000 | 921600 | WiFi, BT, USB OTG, LCD/CAM |
+| ESP32-C3 | 0x0000 | 460800 | WiFi, BT (RISC-V) |
+| ESP32-C6 | 0x0000 | 460800 | WiFi 6, BT, Zigbee (RISC-V) |
+| ESP32-P4 | 0x2000 | 3000000 | WiFi 6, BT, MIPI DSI, LCD/CAM (RISC-V) |
+
+## Bridge Setup
+
+The bridge runs on a MacBook with USB access to ESP32 devices:
+
+1. **Install bridge dependencies:**
+   ```bash
+   pip3 install websockets pyserial
+   ```
+
+2. **Run the bridge server:**
+   ```bash
+   python3 bridge_server.py
+   ```
+
+3. **Verify Tailscale connectivity:**
+   ```bash
+   ping esp32-bridge.tailbdd5a.ts.net
+   ```
+
+## Project Structure
+
+```
+my-project/
+├── CMakeLists.txt          # Project CMake file
+├── sdkconfig               # SDK configuration
+├── sdkconfig.defaults      # Default config for target
+├── main/
+│   ├── CMakeLists.txt
+│   └── main.c             # Application entry point
+├── components/              # Custom components (optional)
+└── build/                 # Build output (generated)
+    ├── flash_args          # Flash arguments
+    ├── bootloader.bin      # Bootloader
+    ├── partition-table.bin # Partition table
+    └── my-project.bin      # Application binary
+```
+
+## Version Header Generation
+
+Build automatically generates `main/version.h` with git commit info:
+
+```c
+#define PROJECT_VERSION "v1.0.0-abc123-dirty"
+#define PROJECT_COMMIT "abc123"
+#define PROJECT_DATE "2026-03-16T14:30:00"
+```
+
+Include in your code:
+```c
+#include "version.h"
+ESP_LOGI(TAG, "Version: %s", PROJECT_VERSION);
+```
+
+## Chip Revision Compatibility
+
+For ESP32-P4 early samples (v1.0), the build automatically applies revision compatibility settings via `sdkconfig.defaults`.
+
+## Troubleshooting
+
+### Build fails with "Target not set"
+Run: `idf.py set-target esp32s3` (or your target)
+
+### Upload fails with connection error
+- Verify bridge is running: `curl http://esp32-bridge.tailbdd5a.ts.net:5679/status`
+- Check Tailscale: `tailscale status`
+
+### Flash fails with "Failed to connect"
+- Check USB cable (must be data cable, not charge-only)
+- Hold BOOT button while resetting ESP32
+- Verify correct baud rate for target
+
+### Monitor shows garbled output
+- Verify correct baud rate (ESP32-P4 uses 3Mbps)
+- Check serial port selection on bridge
+
+## Configuration
+
+Edit `config/chip-config.yaml` to modify:
+- Target baud rates
+- Bridge host/port
+- Template repositories
+- Timing parameters
+
+## Dependencies
+
+- Python 3.10+
+- ESP-IDF v5.4
+- PyYAML (`pip3 install pyyaml`)
+- WebSocket client (included)
+
+## License
+
+Part of the Studio Alight collective.

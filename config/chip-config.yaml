@@ -1,0 +1,98 @@
+# ESP-IDF Target Configuration
+# Only settings not available in build output (flash addresses come from flash_args)
+
+targets:
+  esp32:
+    name: "ESP32"
+    description: "Original ESP32 (Xtensa LX6)"
+    default_baud: 921600
+    supported_features:
+      - wifi
+      - bt
+      - classic_bt
+    
+  esp32s2:
+    name: "ESP32-S2"
+    description: "ESP32-S2 (Xtensa LX7, single core, no BT)"
+    default_baud: 921600
+    supported_features:
+      - wifi
+      - usb_otg
+    
+  esp32s3:
+    name: "ESP32-S3"
+    description: "ESP32-S3 (Xtensa LX7, dual core, AI accel)"
+    default_baud: 921600
+    supported_features:
+      - wifi
+      - bt
+      - usb_otg
+      - lcd_cam
+    
+  esp32c3:
+    name: "ESP32-C3"
+    description: "ESP32-C3 (RISC-V, low cost)"
+    default_baud: 460800
+    supported_features:
+      - wifi
+      - bt
+    
+  esp32c6:
+    name: "ESP32-C6"
+    description: "ESP32-C6 (RISC-V, WiFi 6)"
+    default_baud: 460800
+    supported_features:
+      - wifi
+      - wifi6
+      - bt
+      - zigbee
+    
+  esp32p4:
+    name: "ESP32-P4"
+    description: "ESP32-P4 (RISC-V, high performance, MIPI DSI)"
+    default_baud: 3000000
+    chip_revision_config: true
+    revision_defaults: |
+      # Chip revision compatibility for early P4 samples (v1.0)
+      CONFIG_ESP32P4_REV_MIN_100=y
+      CONFIG_ESP32P4_REV_MIN_FULL=100
+      CONFIG_ESP_REV_MIN_FULL=100
+      CONFIG_ESP_EFUSE_BLOCK_REV_MIN_FULL=0
+      CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+    supported_features:
+      - wifi6
+      - bt
+      - usb_otg
+      - mipi_dsi
+      - lcd_cam
+
+# Bridge configuration
+bridge:
+  host: esp32-bridge.tailbdd5a.ts.net
+  http_port: 5679
+  ws_port: 5678
+  use_tailscale: true
+
+# ESP-IDF configuration
+esp_idf:
+  version: "5.4"
+  export_script: ~/esp-idf-v5.4/export.sh
+  default_target: esp32s3
+
+# Timing configuration
+timing:
+  flash_timeout: 60
+  monitor_duration: 15
+  upload_timeout: 30
+
+# Template repositories
+templates:
+  esp32p4-display:
+    repo: https://github.com/studioalight/esp32-p4-display-template.git
+    description: "720x720 MIPI DSI display with touch"
+  esp32s3-canvas:
+    repo: https://github.com/studioalight/esp32-canvas-node-template.git
+    description: "Canvas node with WebSocket display (170x320)"
+  esp32-generic:
+    repo: https://github.com/espressif/esp-idf-template.git
+    description: "Generic ESP32 starter template"

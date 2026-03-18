@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""
+esp-idf - Main entry point for ESP-IDF Project Builder
+
+Usage: esp-idf <command> [options]
+
+Commands:
+  install     - Install ESP-IDF with multi-target support
+  build       - Build ESP-IDF project for specified target
+  upload      - Upload binaries to bridge
+  flash       - Flash a single binary via WebSocket
+  flash-batch - Flash multiple binaries in one operation
+  monitor     - Monitor serial output
+  iterate     - Full loop: build + upload + flash + monitor
+  new-project - Create from template
+
+Examples:
+  esp-idf install --targets esp32,esp32s3,esp32p4
+  esp-idf build --project ~/my-project --target esp32s3
+  esp-idf iterate --project ~/my-project --target esp32s3 --clean
+  esp-idf flash --project ~/my-project --file app.bin --addr 0x10000
+"""
+
+import sys
+import os
+from pathlib import Path
+
+# Add scripts directory to path
+scripts_dir = Path(__file__).parent / 'scripts'
+sys.path.insert(0, str(scripts_dir))
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(1)
+    
+    command = sys.argv[1]
+    args = sys.argv[2:]
+    
+    # Map commands to scripts
+    commands = {
+        'install': 'install.py',
+        'build': 'build.py',
+        'upload': 'upload.py',
+        'flash': 'flash.py',
+        'flash-batch': 'flash_batch.py',
+        'monitor': 'monitor.py',
+        'iterate': 'iterate.py',
+        'new-project': 'new_project.py'
+    }
+    
+    if command in commands:
+        script = scripts_dir / commands[command]
+        
+        # For install command, use system python (ESP-IDF not yet available)
+        if command == 'install':
+            python_exe = '/usr/bin/python3'
+        else:
+            # Try to use ESP-IDF python if available, fallback to system
+            idf_python = Path.home() / '.espressif' / 'python_env' / 'idf5.4_py3.14_env' / 'bin' / 'python'
+            if idf_python.exists():
+                python_exe = str(idf_python)
+            else:
+                python_exe = '/usr/bin/python3'
+        
+        os.execv(python_exe, ['python', str(script)] + args)
+    else:
+        print(f"Unknown command: {command}", file=sys.stderr)
+        print("\nAvailable commands:", file=sys.stderr)
+        for cmd in commands:
+            print(f"  {cmd}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
