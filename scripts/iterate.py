@@ -102,17 +102,17 @@ def main():
         if args.target:
             flash_cmd.extend(['--target', args.target])
         
-        flash_cmd.append('--no-reset')
+        # Let flash do the reset to boot into app (not --no-reset)
+        # This ensures proper boot mode after flash
         
         if not run_step('FLASH', flash_cmd):
             sys.exit(1)
     
-    # Step 4: Monitor
+    # Step 4: Monitor (no reset needed, device already booted from flash)
     if not args.no_monitor:
         monitor_cmd = [
             'python3', str(scripts_dir / 'monitor.py'),
-            '--duration', str(args.monitor_duration),
-            '--reset'
+            '--duration', str(args.monitor_duration)
         ]
         
         run_step('MONITOR', monitor_cmd)
