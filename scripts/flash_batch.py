@@ -120,6 +120,9 @@ def get_flash_files_from_manifest(build_dir):
                         'addr': addr,
                         'category': category
                     })
+        
+        # Sort by address (lowest first) to ensure correct flash order
+        files.sort(key=lambda f: int(f['addr'], 16))
     
     # Fallback: flasher_args.json (alternative ESP-IDF format)
     elif flasher_json.exists():
@@ -144,6 +147,9 @@ def get_flash_files_from_manifest(build_dir):
                         'addr': addr,
                         'category': category
                     })
+        
+        # Sort by address (lowest first) to ensure correct flash order
+        files.sort(key=lambda f: int(f['addr'], 16))
     
     return files
     
