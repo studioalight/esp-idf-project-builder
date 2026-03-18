@@ -351,8 +351,8 @@ def main():
     if args.verify_target:
         print("\nVerifying connected device...")
         device_info = asyncio.run(do_get_chip_id(bridge_uri=bridge_uri, verbose=False, print_output=False))
-        if device_info:
-            connected_target = device_info.get('target', '').lower().replace('-', '')
+        if device_info and isinstance(device_info, dict):
+            connected_target = (device_info.get('target') or '').lower().replace('-', '')
             build_target = target.lower().replace('-', '')
             if connected_target and connected_target != build_target:
                 print(f"⚠ Target mismatch!")

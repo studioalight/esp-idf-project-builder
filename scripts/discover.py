@@ -112,7 +112,7 @@ def main():
     # Get device info
     device = asyncio.run(discover_device(bridge_uri))
     
-    if 'error' in device:
+    if device is None or 'error' in device:
         print(f"✗ No device detected: {device['error']}")
         print()
         print("Possible causes:")
