@@ -117,11 +117,16 @@ Options:
 ### `monitor` — Serial Output
 ```bash
 ./esp-idf monitor --duration 30
+./esp-idf monitor --reset              # Reset device before monitoring
 ```
 Streams serial output from the ESP32 via the bridge.
 
 Options:
 - `--duration` — Monitor duration in seconds (default: 15)
+- `--reset, -r` — Reset device before monitoring (useful to see boot messages)
+- `--grep, -g` — Filter output by pattern
+- `--forever, -f` — Monitor forever
+- `--stream, -s` — Stream output without buffering
 
 ### `iterate` — Full Workflow
 ```bash

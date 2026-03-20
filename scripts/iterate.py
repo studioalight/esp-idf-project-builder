@@ -44,7 +44,7 @@ def main():
     parser.add_argument('--clean', action='store_true', help='Clean build')
     parser.add_argument('--no-flash', action='store_true', help='Skip flash')
     parser.add_argument('--no-monitor', action='store_true', help='Skip monitor')
-    parser.add_argument('--monitor-duration', type=int, default=15, help='Monitor duration in seconds')
+    parser.add_argument('--monitor-duration', type=int, default=5, help='Monitor duration in seconds')
     parser.add_argument('--idf-path', default=os.path.expanduser('~/esp-idf-v5.4'), help='ESP-IDF path')
     args = parser.parse_args()
     
@@ -92,20 +92,19 @@ def main():
     if not run_step('UPLOAD', upload_cmd):
         sys.exit(1)
     
-    # Step 3: Flash
+    # Step 3: Flash (batch - flashes all partitions including partition table)
     if not args.no_flash:
         flash_cmd = [
-            'python3', str(scripts_dir / 'flash.py'),
+            'python3', str(scripts_dir / 'flash_batch.py'),
             '--project', args.project
         ]
         
         if args.target:
             flash_cmd.extend(['--target', args.target])
         
-        # Let flash do the reset to boot into app (not --no-reset)
-        # This ensures proper boot mode after flash
+        # flash_batch handles all partitions atomically
         
-        if not run_step('FLASH', flash_cmd):
+        if not run_step('FLASH BATCH', flash_cmd):
             sys.exit(1)
     
     # Step 4: Monitor (no reset needed, device already booted from flash)
