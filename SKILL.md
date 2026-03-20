@@ -118,14 +118,14 @@ Options:
 ```bash
 ./esp-idf monitor --duration 30
 ./esp-idf monitor --reset              # Reset device before monitoring
-./esp-idf monitor --timestamps         # Show timestamps with milliseconds
+./esp-idf monitor --no-timestamps      # Hide timestamps
 ```
 Streams serial output from the ESP32 via the bridge.
 
 Options:
 - `--duration` — Monitor duration in seconds (default: 15)
 - `--reset, -r` — Reset device before monitoring (useful to see boot messages)
-- `--timestamps, -t` — Show timestamps with milliseconds (format: HH:MM:SS.mmm)
+- `--no-timestamps` — Hide timestamps (timestamps shown by default as HH:MM:SS.mmm)
 - `--grep, -g` — Filter output by pattern
 - `--forever, -f` — Monitor forever
 - `--stream, -s` — Stream output without buffering

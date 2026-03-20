@@ -19,7 +19,7 @@ def get_bridge_uri():
     port = os.environ.get('ESP_BRIDGE_PORT', '5678')
     return f"wss://{host}:{port}"
 
-async def monitor_serial(duration=None, grep=None, reset=False, stream=False, bridge_uri=None, timestamps=False):
+async def monitor_serial(duration=None, grep=None, reset=False, stream=False, bridge_uri=None, timestamps=True):
     """Monitor serial output"""
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
@@ -97,7 +97,7 @@ def main():
     parser.add_argument('--grep', '-g', help='Filter output by pattern')
     parser.add_argument('--forever', '-f', action='store_true', help='Monitor forever')
     parser.add_argument('--reset', '-r', action='store_true', help='Reset device before monitoring')
-    parser.add_argument('--timestamps', '-t', action='store_true', help='Show timestamps with milliseconds')
+    parser.add_argument('--no-timestamps', action='store_true', help='Hide timestamps')
     parser.add_argument('--stream', '-s', action='store_true', help='Stream output without buffering')
     args = parser.parse_args()
     
@@ -107,9 +107,10 @@ def main():
     print(f"Bridge: {bridge_uri}\n")
     
     duration = None if args.forever else args.duration
+    timestamps = not args.no_timestamps
     
     try:
-        asyncio.run(monitor_serial(duration, args.grep, args.reset, args.stream, bridge_uri, args.timestamps))
+        asyncio.run(monitor_serial(duration, args.grep, args.reset, args.stream, bridge_uri, timestamps))
     except KeyboardInterrupt:
         print("\n[Stopped by user]")
     
