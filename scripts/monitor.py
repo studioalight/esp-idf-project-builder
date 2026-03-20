@@ -19,7 +19,7 @@ def get_bridge_uri():
     port = os.environ.get('ESP_BRIDGE_PORT', '5678')
     return f"wss://{host}:{port}"
 
-async def monitor_serial(duration=None, grep=None, reset=False, stream=False, bridge_uri=None):
+async def monitor_serial(duration=None, grep=None, reset=False, stream=False, bridge_uri=None, timestamps=False):
     """Monitor serial output"""
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
@@ -55,7 +55,21 @@ async def monitor_serial(duration=None, grep=None, reset=False, stream=False, br
                             continue
                         text = re.sub(r'[^\x20-\x7E\n\r]', '', text)
                         if text.strip():
-                            print(text, flush=stream)
+                            if timestamps:
+                                ts = data.get('timestamp', '')
+                                if ts:
+                                    # Parse ISO timestamp and format as HH:MM:SS.mmm
+                                    from datetime import datetime
+                                    try:
+                                        dt = datetime.fromisoformat(ts)
+                                        ts_str = dt.strftime('%H:%M:%S.%f')[:-3]
+                                    except:
+                                        ts_str = ts[:12]  # Fallback
+                                    print(f"[{ts_str}] {text}", flush=stream)
+                                else:
+                                    print(text, flush=stream)
+                            else:
+                                print(text, flush=stream)
                             
                     elif data.get('type') == 'status':
                         status = data.get('connected', False)
@@ -83,6 +97,7 @@ def main():
     parser.add_argument('--grep', '-g', help='Filter output by pattern')
     parser.add_argument('--forever', '-f', action='store_true', help='Monitor forever')
     parser.add_argument('--reset', '-r', action='store_true', help='Reset device before monitoring')
+    parser.add_argument('--timestamps', '-t', action='store_true', help='Show timestamps with milliseconds')
     parser.add_argument('--stream', '-s', action='store_true', help='Stream output without buffering')
     args = parser.parse_args()
     
@@ -94,7 +109,7 @@ def main():
     duration = None if args.forever else args.duration
     
     try:
-        asyncio.run(monitor_serial(duration, args.grep, args.reset, args.stream, bridge_uri))
+        asyncio.run(monitor_serial(duration, args.grep, args.reset, args.stream, bridge_uri, args.timestamps))
     except KeyboardInterrupt:
         print("\n[Stopped by user]")
     
